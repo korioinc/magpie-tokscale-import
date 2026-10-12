@@ -1,6 +1,6 @@
 {
   "name": "magpie-tokscale-import",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Submit daily Magpie usage snapshots directly to Tokscale.",
   "type": "module",
   "main": "./index.mjs",

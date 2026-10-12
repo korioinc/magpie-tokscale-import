@@ -24,11 +24,9 @@ Magpie installs the package and its dependencies and manages the Bun plugin runt
 
 1. Create a token in [Tokscale Settings → API Tokens](https://tokscale.ai/settings).
 2. In Magpie, open **Plugins → magpie-tokscale-import → Sign in**.
-3. Read the daily public-upload notice, enter your API token, and save it. There is no separate Yes/No step.
+3. Read the daily public-upload notice, enter your API token, and save it.
 
-**Saving your API key enables daily uploads to your public Tokscale profile.** It does not validate the token with Tokscale or trigger an immediate upload. An explicit `autoSubmit: false` setting keeps uploads disabled. If `TOKSCALE_API_TOKEN` overrides saved keys, it still requires `autoSubmit: true`.
-
-An earlier **No — save token only** choice remains disabled until you sign in again and save the key, or explicitly enable `autoSubmit`.
+**Saving your API key enables automatic daily uploads to your public Tokscale profile at 00:00 UTC.** With the default settings, no additional configuration is needed. Saving the key does not upload usage immediately.
 
 ### 3. Check the first upload
 
@@ -36,7 +34,17 @@ The first active check records the current UTC date. Uploads begin at the next *
 
 Look for `tokscale-import` in Magpie host logs. The plugin reports missing credentials, disabled uploads, schedule initialization, successful uploads, unchanged snapshots, empty days, and failures. It does not add a separate log viewer.
 
+A signed-in status confirms that Magpie saved the key, not that Tokscale accepted it. Check the upload result in the logs to confirm successful submission.
+
 **The Magpie plugin host must be running.** Magpie starts the host on demand, so an open app alone does not guarantee a midnight run. After a restart, the plugin processes missed days in order.
+
+## Provider list and sign-in
+
+Magpie registers Tokscale Import as a provider when you sign in, even though this plugin does not provide models.
+
+You can remove it from the active provider list without signing out. If Magpie says **"Tokscale Import is signed in, but stays out of this list"**, the saved key remains available to the scheduler. You do not need to select **Add it back** for uploads to work. Keep the plugin enabled, automatic uploads enabled, and the plugin host running.
+
+Removing a provider is not the same as disabling the plugin or signing out. Signing in again can restore the provider to the list.
 
 ## Privacy and safety
 
@@ -50,20 +58,21 @@ Look for `tokscale-import` in Magpie host logs. The plugin reports missing crede
 
 ## Configuration
 
-The sign-in flow is enough for normal use. Advanced settings belong in the installed plugin entry’s `options` object in Magpie’s `plugins.json`. For example:
+Normal Magpie sign-in does not require an `autoSubmit` option. Advanced settings belong in the installed plugin entry’s `options` object in Magpie’s `plugins.json`. To pause automatic uploads, set:
 
 ```json
 {
-  "autoSubmit": true,
-  "timezone": "UTC"
+  "autoSubmit": false
 }
 ```
 
-`autoSubmit: true` is explicit consent to automatic uploads. Reload the plugin after changing settings.
+Reload the plugin after changing settings. An explicit `autoSubmit: false` or `TOKSCALE_AUTO_SUBMIT=false` keeps uploads disabled even when an API key is saved.
+
+If you use `TOKSCALE_API_TOKEN` instead of Magpie sign-in, it overrides saved keys. Enable automatic uploads for that token with `autoSubmit: true` or `TOKSCALE_AUTO_SUBMIT=true`.
 
 | Option | Environment variable | Purpose |
 | --- | --- | --- |
-| `autoSubmit` | `TOKSCALE_AUTO_SUBMIT` | Enable or disable automatic uploads. The environment overrides the option. Saved API keys enable uploads by default; an earlier refusal remains disabled until you sign in again. |
+| `autoSubmit` | `TOKSCALE_AUTO_SUBMIT` | Explicitly enable (`true`) or disable (`false`) automatic uploads. The environment overrides the option. Saving a key through Magpie enables uploads by default. |
 | `timezone` | `TOKSCALE_TIMEZONE` | Aggregation timezone. Defaults to the saved timezone, or UTC for new state. The schedule always runs at 00:00 UTC. |
 | `startDate` | `TOKSCALE_START_DATE` | Exclude history before a `YYYY-MM-DD` date. |
 | `account` | `TOKSCALE_ACCOUNT` | Select a saved `tokscale-import` account. Required when more than one exists. |
@@ -71,7 +80,7 @@ The sign-in flow is enough for normal use. Advanced settings belong in the insta
 | `usageFile` | `TOKSCALE_USAGE_FILE` | Complete usage history. Defaults to `usage.jsonl` in the Magpie configuration directory. |
 | `stateDir` | `TOKSCALE_STATE_DIR` | Checkpoints and shared locks. Defaults to `tokscale-import` in the Magpie configuration directory. |
 | `pricingFile` | `TOKSCALE_PRICING_FILE` | models.dev catalog. Defaults to Magpie’s cached `models.json`. |
-| — | `TOKSCALE_API_TOKEN` | Override saved credentials. Automatic uploads still require explicit consent. |
+| — | `TOKSCALE_API_TOKEN` | Override saved credentials. Requires `autoSubmit: true` or `TOKSCALE_AUTO_SUBMIT=true` for automatic uploads. |
 
 Except for `autoSubmit`, explicit options take precedence over their environment variables.
 
@@ -106,6 +115,8 @@ magpie-tokscale-import verify --date 2026-01-01 --timezone UTC
 ## Troubleshooting
 
 **No upload yet:** Check that the plugin host is running, a token is saved, and automatic uploads are enabled. The first upload waits until the next UTC midnight. An empty completed day produces no upload.
+
+**Uploads remain disabled after an update:** Sign in again and save your key to refresh the saved upload preference. Explicit disable settings still take precedence; update them if you want uploads enabled.
 
 **Authentication rejected:** Replace the token in Magpie. If `TOKSCALE_API_TOKEN` is set, update or remove it too: it overrides saved keys.
 
