@@ -1,6 +1,6 @@
 # magpie-tokscale-import
 
-Want your Magpie usage to appear on Tokscale without exporting it by hand? **magpie-tokscale-import** uploads daily usage snapshots after you opt in. It runs inside Magpie and reports results in the host logs. No separate service or Tokscale CLI is required.
+Want your Magpie usage to appear on Tokscale without exporting it by hand? **magpie-tokscale-import** uploads daily usage snapshots after you save your API key. It runs inside Magpie and reports results in the host logs. No separate service or Tokscale CLI is required.
 
 ## Installation
 
@@ -23,10 +23,12 @@ Magpie installs the package and its dependencies and manages the Bun plugin runt
 ### 2. Connect Tokscale
 
 1. Create a token in [Tokscale Settings → API Tokens](https://tokscale.ai/settings).
-2. In Magpie, open **Plugins → magpie-tokscale-import → Sign in** and save the API token.
-3. Select **Yes — enable daily upload** to opt in, or **No — save token only** to keep automatic uploads disabled.
+2. In Magpie, open **Plugins → magpie-tokscale-import → Sign in**.
+3. Read the daily public-upload notice, enter your API token, and save it. There is no separate Yes/No step.
 
-Saving a token does not validate it with Tokscale or trigger an immediate upload. An explicit `autoSubmit` setting takes precedence over the sign-in choice and skips that prompt.
+**Saving your API key enables daily uploads to your public Tokscale profile.** It does not validate the token with Tokscale or trigger an immediate upload. An explicit `autoSubmit: false` setting keeps uploads disabled. If `TOKSCALE_API_TOKEN` overrides saved keys, it still requires `autoSubmit: true`.
+
+An earlier **No — save token only** choice remains disabled until you sign in again and save the key, or explicitly enable `autoSubmit`.
 
 ### 3. Check the first upload
 
@@ -61,7 +63,7 @@ The sign-in flow is enough for normal use. Advanced settings belong in the insta
 
 | Option | Environment variable | Purpose |
 | --- | --- | --- |
-| `autoSubmit` | `TOKSCALE_AUTO_SUBMIT` | Enable or disable automatic uploads. The environment overrides the option; otherwise the saved sign-in choice applies. Disabled without consent. |
+| `autoSubmit` | `TOKSCALE_AUTO_SUBMIT` | Enable or disable automatic uploads. The environment overrides the option. Saved API keys enable uploads by default; an earlier refusal remains disabled until you sign in again. |
 | `timezone` | `TOKSCALE_TIMEZONE` | Aggregation timezone. Defaults to the saved timezone, or UTC for new state. The schedule always runs at 00:00 UTC. |
 | `startDate` | `TOKSCALE_START_DATE` | Exclude history before a `YYYY-MM-DD` date. |
 | `account` | `TOKSCALE_ACCOUNT` | Select a saved `tokscale-import` account. Required when more than one exists. |
@@ -114,6 +116,28 @@ magpie-tokscale-import verify --date 2026-01-01 --timezone UTC
 **Disable uploads:** Set `autoSubmit` to `false` or `TOKSCALE_AUTO_SUBMIT=false`, then reload the plugin. Removing the saved token also stops future checks unless an environment token remains. Requests already in flight may complete. Removing credentials does not revoke the Tokscale token or delete uploaded records.
 
 Tokscale API changes may require a plugin update. Imported history is not guaranteed to be excluded from leaderboards.
+
+## Releases
+
+Pushing a stable version tag such as `v1.0.1` runs the release workflow. It checks version consistency, runs the tests, and attaches an npm `.tgz` package to a GitHub Release with generated release notes. It does not publish to the npm registry.
+
+To publish a release:
+
+1. Update `package.json` and `package-lock.json` with `npm version 1.0.1 --no-git-tag-version`.
+2. Set `VERSION` in `lib/config.mjs` to `magpie-import/1.0.1`. The complete value must fit in 20 characters.
+3. Commit and merge the changes, including `.github/workflows/release.yml`, into `main`.
+4. Tag the updated `main` commit and push the tag:
+
+```sh
+git switch main
+git pull --ff-only origin main
+git tag -a v1.0.1 -m "Release v1.0.1"
+git push origin v1.0.1
+```
+
+Replace `1.0.1` with the intended version everywhere. The tag must match all three version files. Prerelease tags such as `v1.0.1-beta.1` are not supported.
+
+The workflow uses the repository’s built-in `GITHUB_TOKEN`; no additional secret is required. GitHub Actions must be enabled. If a run fails, rerun it from the Actions page rather than moving the tag. Retries finish an existing draft; an already published release is left unchanged. Never move a published version tag.
 
 ## License
 

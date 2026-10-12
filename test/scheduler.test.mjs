@@ -30,15 +30,16 @@ async function setup(t) {
   return { config, auth, record, receive, remoteTotal };
 }
 
-test("Native sign-in consent enables daily uploads; explicit disable still prevents external mutation", async t => {
-  const { config, receive, remoteTotal } = await setup(t);
+test("Saving an API key enables daily uploads without overriding an earlier refusal or explicit disable", async t => {
+  const { config, auth, receive, remoteTotal } = await setup(t);
   delete config.autoSubmit;
   globalThis.fetch = receive;
   const authFile = join(config.magpieDir, "plugin-auth.json");
+  await writeFile(authFile, JSON.stringify({ "tokscale-import": { type: "api", key: "tt_synthetic_schedule", metadata: { autoSubmit: "no" } } }));
   await run(config, { scheduled: true, now: new Date("2026-03-09T18:00:00Z") });
   await run(config, { scheduled: true, now: new Date("2026-03-10T00:00:00Z") });
   assert.equal(await remoteTotal(), 0);
-  await writeFile(authFile, JSON.stringify({ "tokscale-import": { type: "api", key: "tt_synthetic_schedule", metadata: { autoSubmit: "yes" } } }));
+  await auth("tt_synthetic_schedule");
   await run(config, { scheduled: true, now: new Date("2026-03-10T18:00:00Z") });
   await run({ ...config, autoSubmit: false }, { scheduled: true, now: new Date("2026-03-11T00:00:00Z") });
   assert.equal(await remoteTotal(), 0);

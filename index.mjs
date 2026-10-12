@@ -34,18 +34,12 @@ export default {
         provider: AUTH_PROVIDER,
         methods: [{
           type: "api",
-          label: process.env.TOKSCALE_API_TOKEN !== undefined ? "API token (TOKSCALE_API_TOKEN overrides saved keys)"
-            : settings.autoSubmit === true ? "API token · daily public upload enabled (00:00 UTC)"
-            : settings.autoSubmit === false ? "API token · automatic upload disabled by configuration"
-            : "API token",
-          prompts: settings.autoSubmit === undefined ? [{
-            type: "select", key: "autoSubmit",
-            message: "Upload daily usage to your public Tokscale profile at 00:00 UTC? Create a token at https://tokscale.ai/settings.",
-            options: [
-              { label: "No — save token only", value: "no" },
-              { label: "Yes — enable daily upload", value: "yes" },
-            ],
-          }] : [],
+          label: process.env.TOKSCALE_API_TOKEN !== undefined
+            ? `API key — TOKSCALE_API_TOKEN overrides saved keys. Daily public uploads are ${settings.autoSubmit === true ? "enabled (00:00 UTC)" : "disabled; set autoSubmit to true to enable"}.`
+            : settings.autoSubmit === false
+              ? "API key — automatic uploads are disabled by configuration."
+              : "API key — saving enables daily uploads to your public Tokscale profile at 00:00 UTC.",
+          placeholder: "Create an API token at https://tokscale.ai/settings",
         }],
       },
     };
