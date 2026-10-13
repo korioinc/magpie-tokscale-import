@@ -33,20 +33,28 @@ async function setup(t) {
   return { config: { magpieDir: dir, usageFile: join(dir, "usage.jsonl"), stateDir: join(dir, "state"), pricingFile: join(dir, "missing-models.json"), timezone: "UTC" }, auth, receive, total };
 }
 
-test("Legacy non-UTC history cannot be resubmitted or silently relabeled", async t => {
+test("Legacy timezone does not block UTC scheduling or rewrite settled history", async t => {
   const { config, receive, total } = await setup(t);
   globalThis.fetch = receive;
   await run(config, { now });
   const statePath = join(config.stateDir, "state.json");
   const legacy = JSON.parse(await readFile(statePath, "utf8"));
   legacy.timezone = "Asia/Seoul";
+  legacy.schedule = { completedUtcDate: "2026-03-09", initializedAt: "2026-03-09T00:00:00Z" };
   await writeFile(statePath, JSON.stringify(legacy));
-  const before = await readFile(statePath, "utf8");
-  await writeFile(config.usageFile, (await readFile(config.usageFile, "utf8")) + JSON.stringify({ t: "2026-03-08T13:00:00Z", agent: "pi", provider: "openai", model: "example", in: 50 }) + "\n");
+  const records = [
+    { t: "2026-03-09T08:59:59+09:00", in: 50 }, // Previous UTC day, already settled.
+    { t: "2026-03-09T09:00:00+09:00", in: 70 }, // Selected UTC day.
+    { t: "2026-03-10T00:00:00Z", in: 90 }, // Current UTC day, not complete.
+  ].map(row => ({ agent: "pi", provider: "openai", model: "example", ...row }));
+  await writeFile(config.usageFile, (await readFile(config.usageFile, "utf8")) + records.map(row => JSON.stringify(row)).join("\n") + "\n");
   delete config.timezone;
-  await assert.rejects(run(config, { now }));
-  assert.equal(await total(), 120);
-  assert.equal(await readFile(statePath, "utf8"), before);
+  await run(config, { scheduled: true, now });
+  const after = JSON.parse(await readFile(statePath, "utf8"));
+  assert.equal(await total(), 190);
+  assert.deepEqual(after.days["2026-03-08"], legacy.days["2026-03-08"]);
+  await run(config, { scheduled: true, now });
+  assert.equal(await total(), 190);
 });
 
 test("Missing consent prevents external usage mutation", async t => {

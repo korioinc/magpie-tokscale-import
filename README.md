@@ -84,7 +84,7 @@ If you use `TOKSCALE_API_TOKEN` instead of Magpie sign-in, it overrides saved ke
 
 Except for `autoSubmit`, explicit options take precedence over their environment variables.
 
-**Existing non-UTC history must be migrated before uploads resume.** The plugin rejects non-UTC settings and checkpoints rather than silently changing their date boundaries. Back up the original state and reconcile affected Tokscale dates before writing UTC checkpoints. Changing only `state.json`, deleting checkpoints, or using a new state directory can duplicate or omit usage; none is an automatic migration.
+**Saved timezone metadata does not control extraction or block scheduled uploads.** Even if `state.json` contains `Asia/Seoul`, all newly extracted dates use UTC. Existing daily checkpoints, retry safeguards, and the schedule remain intact; no reset or history migration is required to continue the daily schedule. Previously uploaded days are not automatically corrected or re-uploaded. Manual historical submissions still enforce the existing decreased-usage protection.
 
 ## Optional CLI
 

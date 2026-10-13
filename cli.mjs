@@ -13,7 +13,7 @@ const help = `magpie-tokscale-import <preview|submit|verify|daemon|status> [opti
   daemon --yes                Check every minute while this process lives.
   status                      Show configuration and whether credentials/consent exist; no secrets.
   --date YYYY-MM-DD           Select one completed day (preview/submit/verify).
-  --timezone UTC              UTC only; other timezones require history migration.
+  --timezone UTC              UTC only; saved legacy timezone does not affect extraction.
   --start-date YYYY-MM-DD     Exclude earlier history.
   --magpie-dir PATH           Magpie config/usage/auth directory.
   --usage-file PATH           Full, unrotated usage.jsonl snapshot.
