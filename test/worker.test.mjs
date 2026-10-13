@@ -39,6 +39,7 @@ test("Legacy timezone does not block UTC scheduling or rewrite settled history",
   await run(config, { now });
   const statePath = join(config.stateDir, "state.json");
   const legacy = JSON.parse(await readFile(statePath, "utf8"));
+  legacy.version = 1;
   legacy.timezone = "Asia/Seoul";
   legacy.schedule = { completedUtcDate: "2026-03-09", initializedAt: "2026-03-09T00:00:00Z" };
   await writeFile(statePath, JSON.stringify(legacy));
