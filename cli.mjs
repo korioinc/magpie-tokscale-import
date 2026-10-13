@@ -4,6 +4,7 @@ import { configuration, credentials, validDate } from "./lib/config.mjs";
 import { aggregate, payload } from "./lib/aggregate.mjs";
 import { run, startWorker } from "./lib/worker.mjs";
 import { verifyRecordedDay } from "./lib/reconcile.mjs";
+import { loadState } from "./lib/state.mjs";
 
 const help = `magpie-tokscale-import <preview|submit|verify|daemon|status> [options]
   preview                     Local-only completed daily snapshots; no authentication/network.
@@ -52,6 +53,7 @@ try {
       console.log(JSON.stringify(result, null, 2));
       if (result.status !== "verified") process.exitCode = 1;
     } else if (command === "status") {
+      await loadState(config);
       const auth = await credentials(config);
       console.log(JSON.stringify({ ...config, configured: !!auth.token, consent: auth.consent }, null, 2));
     } else {
