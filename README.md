@@ -84,7 +84,11 @@ If you use `TOKSCALE_API_TOKEN` instead of Magpie sign-in, it overrides saved ke
 
 Except for `autoSubmit`, explicit options take precedence over their environment variables.
 
-**Saved timezone metadata does not control extraction or block scheduled uploads.** Even if `state.json` contains `Asia/Seoul`, all newly extracted dates use UTC. Existing daily checkpoints, retry safeguards, and the schedule remain intact; no reset or history migration is required to continue the daily schedule. Previously uploaded days are not automatically corrected or re-uploaded. Manual historical submissions still enforce the existing decreased-usage protection.
+**State format upgrades preserve history; package updates do not reset it.** State format version 2 records `timezone: "UTC"`. Version 1 is automatically converted under the shared state lock before a scheduled check, submit, daemon check, or verify operation continues, even when no upload is due. The original JSON is preserved in `state.v1.backup.json`; an existing conflicting backup stops conversion instead of being overwritten.
+
+Daily checkpoints, the schedule, pending uploads, retry safeguards, and other metadata survive conversion. An old non-UTC timezone is preserved as `legacyTimezone`: it records the former file metadata, not proof of each day’s aggregation timezone. All new extraction uses UTC. Previously uploaded days are not automatically corrected or re-uploaded, and decreased-usage protection still applies.
+
+`status` and `preview` interpret old state in memory without modifying files. A current-format state needs no conversion when only the package version changes. Unsupported newer formats or invalid state stop processing without resetting history. Conversion never restores the backup automatically: restoring an old backup after later submissions would lose newer checkpoints. Keep backups private, and do not run an older plugin against the upgraded state.
 
 ## Optional CLI
 
