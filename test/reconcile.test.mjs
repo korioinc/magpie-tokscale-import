@@ -14,8 +14,8 @@ test("An uncertain settled day recovers only from matching account/day/model usa
   const oldFetch = globalThis.fetch, oldToken = process.env.TOKSCALE_API_TOKEN;
   delete process.env.TOKSCALE_API_TOKEN;
   t.after(async () => { globalThis.fetch = oldFetch; if (oldToken === undefined) delete process.env.TOKSCALE_API_TOKEN; else process.env.TOKSCALE_API_TOKEN = oldToken; await rm(dir, { recursive: true, force: true }); });
-  const config = configuration({ magpieDir: dir, stateDir: join(dir, "state"), timezone: "Asia/Seoul" });
-  const date = yesterday(new Date(), "Asia/Seoul");
+  const config = configuration({ magpieDir: dir, stateDir: join(dir, "state") });
+  const date = yesterday(new Date());
   await writeFile(config.usageFile, JSON.stringify({ t: date + "T12:00:00+09:00", agent: "pi", provider: "openai", model: "example", in: 100, out: 20 }) + "\n");
   await writeFile(join(dir, "plugin-auth.json"), JSON.stringify({ "tokscale-import": { type: "api", key: "tt_synthetic_recovery_test", metadata: { autoSubmit: "no" } } }));
   globalThis.fetch = async () => Response.json({ success: true, mode: "merge", metrics: { totalTokens: 120 } });

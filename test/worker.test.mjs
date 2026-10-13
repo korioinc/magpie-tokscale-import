@@ -33,6 +33,22 @@ async function setup(t) {
   return { config: { magpieDir: dir, usageFile: join(dir, "usage.jsonl"), stateDir: join(dir, "state"), pricingFile: join(dir, "missing-models.json"), timezone: "UTC" }, auth, receive, total };
 }
 
+test("Legacy non-UTC history cannot be resubmitted or silently relabeled", async t => {
+  const { config, receive, total } = await setup(t);
+  globalThis.fetch = receive;
+  await run(config, { now });
+  const statePath = join(config.stateDir, "state.json");
+  const legacy = JSON.parse(await readFile(statePath, "utf8"));
+  legacy.timezone = "Asia/Seoul";
+  await writeFile(statePath, JSON.stringify(legacy));
+  const before = await readFile(statePath, "utf8");
+  await writeFile(config.usageFile, (await readFile(config.usageFile, "utf8")) + JSON.stringify({ t: "2026-03-08T13:00:00Z", agent: "pi", provider: "openai", model: "example", in: 50 }) + "\n");
+  delete config.timezone;
+  await assert.rejects(run(config, { now }));
+  assert.equal(await total(), 120);
+  assert.equal(await readFile(statePath, "utf8"), before);
+});
+
 test("Missing consent prevents external usage mutation", async t => {
   const { config, receive, total } = await setup(t);
   globalThis.fetch = receive;

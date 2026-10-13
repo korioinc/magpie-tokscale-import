@@ -30,7 +30,7 @@ Magpie installs the package and its dependencies and manages the Bun plugin runt
 
 ### 3. Check the first upload
 
-The first active check records the current UTC date. Uploads begin at the next **00:00 UTC**, using the previous completed day. New installations aggregate dates in UTC. Earlier history is not uploaded automatically when you first enable the plugin or replace the token.
+The first active check records the current UTC date. Uploads begin at the next **00:00 UTC**, using the previous completed day. All usage dates use UTC midnight boundaries, regardless of the host timezone or timestamp offset. Earlier history is not uploaded automatically when you first enable the plugin or replace the token.
 
 Look for `tokscale-import` in Magpie host logs. The plugin reports missing credentials, disabled uploads, schedule initialization, successful uploads, unchanged snapshots, empty days, and failures. It does not add a separate log viewer.
 
@@ -73,7 +73,7 @@ If you use `TOKSCALE_API_TOKEN` instead of Magpie sign-in, it overrides saved ke
 | Option | Environment variable | Purpose |
 | --- | --- | --- |
 | `autoSubmit` | `TOKSCALE_AUTO_SUBMIT` | Explicitly enable (`true`) or disable (`false`) automatic uploads. The environment overrides the option. Saving a key through Magpie enables uploads by default. |
-| `timezone` | `TOKSCALE_TIMEZONE` | Aggregation timezone. Defaults to the saved timezone, or UTC for new state. The schedule always runs at 00:00 UTC. |
+| `timezone` | `TOKSCALE_TIMEZONE` | Only `UTC` is accepted. Aggregation and the daily schedule both use UTC. |
 | `startDate` | `TOKSCALE_START_DATE` | Exclude history before a `YYYY-MM-DD` date. |
 | `account` | `TOKSCALE_ACCOUNT` | Select a saved `tokscale-import` account. Required when more than one exists. |
 | `magpieDir` | `MAGPIE_DIR` | Magpie configuration directory. The plugin uses the host directory; the CLI uses the standard Magpie configuration directory. |
@@ -84,7 +84,7 @@ If you use `TOKSCALE_API_TOKEN` instead of Magpie sign-in, it overrides saved ke
 
 Except for `autoSubmit`, explicit options take precedence over their environment variables.
 
-**Do not change the timezone of existing submissions without a migration plan.** A mismatch with saved state stops uploads. Changing only the setting or deleting checkpoints can cause overlaps with existing Tokscale records.
+**Existing non-UTC history must be migrated before uploads resume.** The plugin rejects non-UTC settings and checkpoints rather than silently changing their date boundaries. Back up the original state and reconcile affected Tokscale dates before writing UTC checkpoints. Changing only `state.json`, deleting checkpoints, or using a new state directory can duplicate or omit usage; none is an automatic migration.
 
 ## Optional CLI
 

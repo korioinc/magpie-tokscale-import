@@ -4,6 +4,7 @@ import { configuration, credentials, validDate } from "./lib/config.mjs";
 import { aggregate, payload } from "./lib/aggregate.mjs";
 import { run, startWorker } from "./lib/worker.mjs";
 import { verifyRecordedDay } from "./lib/reconcile.mjs";
+import { loadState } from "./lib/state.mjs";
 
 const help = `magpie-tokscale-import <preview|submit|verify|daemon|status> [options]
   preview                     Local-only completed daily snapshots; no authentication/network.
@@ -12,7 +13,7 @@ const help = `magpie-tokscale-import <preview|submit|verify|daemon|status> [opti
   daemon --yes                Check every minute while this process lives.
   status                      Show configuration and whether credentials/consent exist; no secrets.
   --date YYYY-MM-DD           Select one completed day (preview/submit/verify).
-  --timezone IANA             Default UTC; persisted after first upload run.
+  --timezone UTC              UTC only; other timezones require history migration.
   --start-date YYYY-MM-DD     Exclude earlier history.
   --magpie-dir PATH           Magpie config/usage/auth directory.
   --usage-file PATH           Full, unrotated usage.jsonl snapshot.
@@ -52,8 +53,9 @@ try {
       console.log(JSON.stringify(result, null, 2));
       if (result.status !== "verified") process.exitCode = 1;
     } else if (command === "status") {
+      await loadState(config);
       const auth = await credentials(config);
-      console.log(JSON.stringify({ ...config, timezone: config.timezone || "persisted state, otherwise UTC", configured: !!auth.token, consent: auth.consent }, null, 2));
+      console.log(JSON.stringify({ ...config, configured: !!auth.token, consent: auth.consent }, null, 2));
     } else {
       if (!values.yes) throw new Error("Upload requires --yes. Review preview first; uploaded usage may appear on your public Tokscale profile.");
       if (command === "submit") {
