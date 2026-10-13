@@ -13,7 +13,7 @@ async function setup(t) {
   const originalFetch = globalThis.fetch, originalToken = process.env.TOKSCALE_API_TOKEN;
   delete process.env.TOKSCALE_API_TOKEN;
   t.after(async () => { globalThis.fetch = originalFetch; if (originalToken === undefined) delete process.env.TOKSCALE_API_TOKEN; else process.env.TOKSCALE_API_TOKEN = originalToken; await rm(dir, { recursive: true, force: true }); });
-  const config = configuration({ magpieDir: dir, stateDir: join(dir, "state"), timezone: "Asia/Seoul", autoSubmit: true });
+  const config = configuration({ magpieDir: dir, stateDir: join(dir, "state"), autoSubmit: true });
   const auth = key => writeFile(join(dir, "plugin-auth.json"), JSON.stringify({ "tokscale-import": { type: "api", key } }));
   await auth("tt_synthetic_schedule");
   const record = (date, input = 100) => ({ t: date + "T12:00:00+09:00", agent: "pi", provider: "openai", model: "example", in: input, out: 20 });

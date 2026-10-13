@@ -49,13 +49,13 @@ test("Incomplete tail is deferred and subsequently counted, without replaying pr
   assert.equal(after.contributions[0].totals.tokens, 240);
 });
 
-test("Timezone boundaries keep current-day usage private and DST days separate", async t => {
+test("UTC midnight separates days and keeps current-day usage private regardless of timestamp offset", async t => {
   const config = await setup(t, [
-    call({ t: "2026-03-08T04:59:59Z" }), // March 7 in New York.
-    call({ t: "2026-03-08T05:00:00Z" }), // March 8 before DST shift.
-    call({ t: "2026-03-09T04:00:00Z" }), // March 9 after DST shift: still current date.
+    call({ t: "2026-03-08T08:59:59+09:00" }), // March 7, 23:59:59 UTC.
+    call({ t: "2026-03-08T09:00:00+09:00" }), // March 8, 00:00:00 UTC.
+    call({ t: "2026-03-09T00:00:00Z" }), // Current UTC day: do not upload.
   ]);
-  const { contributions } = await aggregate({ ...config, timezone: "America/New_York" }, { now: new Date("2026-03-09T12:00:00Z") });
+  const { contributions } = await aggregate(config, { now: new Date("2026-03-09T00:00:01Z") });
   assert.equal(contributions.find(day => day.date === "2026-03-07").totals.tokens, 120);
   assert.equal(contributions.find(day => day.date === "2026-03-08").totals.tokens, 120);
   assert.equal(contributions.reduce((n, day) => n + day.totals.tokens, 0), 240);
