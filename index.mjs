@@ -1,5 +1,5 @@
 import { AUTH_PROVIDER, configuration } from "./lib/config.mjs";
-import { startDailyScheduler } from "./lib/scheduler.mjs";
+import { DAILY_UPLOAD_TIME, startDailyScheduler } from "./lib/scheduler.mjs";
 import { run } from "./lib/worker.mjs";
 
 export default {
@@ -25,8 +25,9 @@ export default {
         // Each host may check; the worker's shared disk lock/checkpoints prevent duplicate submissions.
         stopScheduler ??= startDailyScheduler(async now => {
           const result = await run(settings, { scheduled: true, now });
-          if (["not-due", "locked"].includes(result.status)) return;
-          const level = result.failed?.length || result.status === "auth-blocked" ? "error" : result.deferred?.length ? "warn" : "info";
+          if (["not-due", "locked"].includes(result.status) && !result.verification) return;
+          const level = result.failed?.length || result.status === "auth-blocked" ? "error"
+            : result.deferred?.length || (result.verification && result.verification.status !== "verified") ? "warn" : "info";
           await log(JSON.stringify(result), level);
         }, message => log(message, "error"));
       },
@@ -35,10 +36,10 @@ export default {
         methods: [{
           type: "api",
           label: process.env.TOKSCALE_API_TOKEN !== undefined
-            ? `API key — TOKSCALE_API_TOKEN overrides saved keys. Daily public uploads are ${settings.autoSubmit === true ? "enabled (00:00 UTC)" : "disabled; set autoSubmit to true to enable"}.`
+            ? `API key — TOKSCALE_API_TOKEN overrides saved keys. Daily public uploads are ${settings.autoSubmit === true ? `enabled (${DAILY_UPLOAD_TIME} UTC)` : "disabled; set autoSubmit to true to enable"}.`
             : settings.autoSubmit === false
               ? "API key — automatic uploads are disabled by configuration."
-              : "API key — saving enables daily uploads to your public Tokscale profile at 00:00 UTC.",
+              : `API key — saving enables daily uploads to your public Tokscale profile at ${DAILY_UPLOAD_TIME} UTC.`,
           placeholder: "Create an API token at https://tokscale.ai/settings",
         }],
       },
