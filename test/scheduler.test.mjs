@@ -7,6 +7,9 @@ import { run } from "../lib/worker.mjs";
 import { configuration } from "../lib/config.mjs";
 import { aggregate } from "../lib/aggregate.mjs";
 import { verifyRecordedDay } from "../lib/reconcile.mjs";
+import { dailyUploadAt } from "../lib/scheduler.mjs";
+
+const uploadTime = date => new Date(dailyUploadAt(date));
 
 async function setup(t) {
   const dir = await mkdtemp(join(tmpdir(), "magpie-schedule-test-"));
@@ -23,11 +26,24 @@ async function setup(t) {
   const remoteTotal = async () => Object.values(JSON.parse(await readFile(ledger, "utf8"))).reduce((a, b) => a + b, 0);
   const receive = async (_url, init) => {
     const payload = JSON.parse(init.body), rows = JSON.parse(await readFile(ledger, "utf8"));
-    for (const day of payload.contributions) rows[day.date] = day.totals.tokens;
+    for (const day of payload.contributions) rows[day.date] = (rows[day.date] ?? 0) + day.totals.tokens;
     await writeFile(ledger, JSON.stringify(rows));
     return Response.json({ success: true, submissionId: "synthetic", username: "synthetic", mode: "merge", metrics: { totalTokens: String(await remoteTotal()) } });
   };
-  return { config, auth, record, receive, remoteTotal };
+  const profile = async () => ({
+    user: { username: "synthetic" },
+    contributions: Object.entries(JSON.parse(await readFile(ledger, "utf8"))).map(([date, tokens]) => ({
+      date, totals: { tokens, cost: 0 },
+      tokenBreakdown: { input: 100, output: 20, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+      clients: [{ client: "pi", messages: 1, cost: 0,
+        tokens: { input: 100, output: 20, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+        models: { example: { input: 100, output: 20, cacheRead: 0, cacheWrite: 0, reasoning: 0, tokens, messages: 1, cost: 0 } },
+      }],
+    })),
+  });
+  const successfulTokens = async () => Object.values(JSON.parse(await readFile(join(config.stateDir, "state.json"), "utf8")).days)
+    .reduce((sum, day) => sum + Object.values(day.clientTokens).reduce((a, b) => a + b, 0), 0);
+  return { config, auth, record, receive, remoteTotal, profile, successfulTokens };
 }
 
 test("Saving an API key enables daily uploads without overriding an earlier refusal or explicit disable", async t => {
@@ -37,26 +53,31 @@ test("Saving an API key enables daily uploads without overriding an earlier refu
   const authFile = join(config.magpieDir, "plugin-auth.json");
   await writeFile(authFile, JSON.stringify({ "tokscale-import": { type: "api", key: "tt_synthetic_schedule", metadata: { autoSubmit: "no" } } }));
   await run(config, { scheduled: true, now: new Date("2026-03-09T18:00:00Z") });
-  await run(config, { scheduled: true, now: new Date("2026-03-10T00:00:00Z") });
+  await run(config, { scheduled: true, now: uploadTime("2026-03-10") });
   assert.equal(await remoteTotal(), 0);
   await auth("tt_synthetic_schedule");
   await run(config, { scheduled: true, now: new Date("2026-03-10T18:00:00Z") });
-  await run({ ...config, autoSubmit: false }, { scheduled: true, now: new Date("2026-03-11T00:00:00Z") });
+  await run({ ...config, autoSubmit: false }, { scheduled: true, now: uploadTime("2026-03-11") });
   assert.equal(await remoteTotal(), 0);
-  await run(config, { scheduled: true, now: new Date("2026-03-11T00:00:00Z") });
+  await run(config, { scheduled: true, now: uploadTime("2026-03-11") });
   assert.equal(await remoteTotal(), 120);
 });
 
-test("Enabling a daily schedule does not submit old history before its first UTC midnight", async t => {
-  const { config, receive, remoteTotal } = await setup(t);
+test("Daily uploads wait for the grace period and include late records without replay", async t => {
+  const { config, receive, remoteTotal, record } = await setup(t);
   globalThis.fetch = receive;
   await run(config, { scheduled: true, now: new Date("2026-03-09T18:00:00Z") });
-  await run(config, { scheduled: true, now: new Date("2026-03-09T23:59:59Z") });
-  assert.equal(await remoteTotal(), 0);
   await run(config, { scheduled: true, now: new Date("2026-03-10T00:00:00Z") });
-  assert.equal(await remoteTotal(), 120);
-  await run(config, { scheduled: true, now: new Date("2026-03-10T00:01:00Z") });
-  assert.equal(await remoteTotal(), 120);
+  assert.equal(await remoteTotal(), 0);
+  const due = uploadTime("2026-03-10");
+  await run(config, { scheduled: true, now: new Date(due.getTime() - 1) });
+  assert.equal(await remoteTotal(), 0);
+  const before = await readFile(config.usageFile, "utf8");
+  await writeFile(config.usageFile, before + JSON.stringify(record("2026-03-09", 50)) + "\n");
+  await run(config, { scheduled: true, now: due });
+  assert.equal(await remoteTotal(), 190); // Includes 70 late tokens, excludes current-day and old history.
+  await run(config, { scheduled: true, now: new Date(due.getTime() + 60000) });
+  assert.equal(await remoteTotal(), 190);
 });
 
 test("Restart catches up missed UTC days without adding current usage or replaying settled snapshots", async t => {
@@ -76,13 +97,16 @@ test("An uncertain remote commit stops automatic replay even if late records cha
   globalThis.fetch = receive;
   await run(config, { scheduled: true, now: new Date("2026-03-09T18:00:00Z") });
   globalThis.fetch = async (...args) => { await receive(...args); throw new TypeError("connection lost after commit"); };
-  await run(config, { scheduled: true, now: new Date("2026-03-10T00:00:00Z") });
+  await run(config, { scheduled: true, now: uploadTime("2026-03-10") });
   assert.equal(await remoteTotal(), 120);
   const before = await readFile(config.usageFile, "utf8");
   await writeFile(config.usageFile, before + JSON.stringify(record("2026-03-09", 50)) + "\n");
-  globalThis.fetch = async () => { throw new Error("Uncertain upload must not be replayed."); };
+  globalThis.fetch = async (url, init) => {
+    if (init.method === "POST") return receive(url, init);
+    throw new TypeError("profile unavailable");
+  };
   await run(config, { scheduled: true, now: new Date("2026-03-10T02:00:00Z") });
-  await run(config, { yes: true, date: "2026-03-09", now: new Date("2026-03-10T02:01:00Z") });
+  await run(config, { yes: true, retry: true, date: "2026-03-09", now: new Date("2026-03-10T02:01:00Z") });
   const state = JSON.parse(await readFile(join(config.stateDir, "state.json"), "utf8"));
   assert.equal(Object.values(state.days).reduce((n, day) => n + Object.values(day.clientTokens).reduce((a, b) => a + b, 0), 0), 0);
   assert.equal(await remoteTotal(), 120);
@@ -93,7 +117,7 @@ test("Retrying a different day cannot destroy an uncertain scheduled day's profi
   globalThis.fetch = receive;
   await run(config, { scheduled: true, now: new Date("2026-03-09T18:00:00Z") });
   globalThis.fetch = async (...args) => { await receive(...args); throw new TypeError("lost receipt"); };
-  await run(config, { scheduled: true, now: new Date("2026-03-10T00:00:00Z") });
+  await run(config, { scheduled: true, now: uploadTime("2026-03-10") });
   globalThis.fetch = receive;
   await run(config, { yes: true, retry: true, date: "2026-03-08", now: new Date("2026-03-10T02:00:00Z") });
   const day = (await aggregate(config, { date: "2026-03-09" })).contributions[0];
@@ -106,16 +130,67 @@ test("Retrying a different day cannot destroy an uncertain scheduled day's profi
   assert.equal(Object.values(state.days[day.date].clientTokens).reduce((a, b) => a + b, 0), 120);
 });
 
+test("Uncertain days do not stop later uploads and recover automatically without duplicate delivery", async t => {
+  const { config, receive, remoteTotal, profile, successfulTokens } = await setup(t);
+  let receiptsLost = true, profileUnavailable = true;
+  globalThis.fetch = async (url, init) => {
+    if (init.method === "POST") {
+      const receipt = await receive(url, init);
+      if (receiptsLost) throw new TypeError("connection lost after commit");
+      return receipt;
+    }
+    if (profileUnavailable) throw new TypeError("profile unavailable");
+    return Response.json(String(url).endsWith("/api/auth/token") ? { user: { username: "synthetic" } } : await profile());
+  };
+  await run(config, { scheduled: true, now: new Date("2026-03-08T18:00:00Z") });
+  await run(config, { scheduled: true, now: uploadTime("2026-03-09") });
+  await run(config, { scheduled: true, now: uploadTime("2026-03-10") });
+  receiptsLost = false;
+  await run(config, { scheduled: true, now: uploadTime("2026-03-11") });
+  assert.equal(await remoteTotal(), 360); // Three independent days, even while profile GET is down.
+  assert.equal(await successfulTokens(), 120);
+  profileUnavailable = false;
+  for (const hour of ["01", "02"]) await run(config, { scheduled: true, now: new Date(`2026-03-11T${hour}:00:00Z`) });
+  assert.equal(await successfulTokens(), 360); // Both missing receipts recovered without manual verify.
+  assert.equal(await remoteTotal(), 360);
+  await run(config, { scheduled: true, now: new Date("2026-03-11T03:00:00Z") });
+  assert.equal(await remoteTotal(), 360);
+});
+
+test("Profile mismatch parks only its day and cannot starve another day's automatic recovery", async t => {
+  const { config, receive, remoteTotal, profile, successfulTokens } = await setup(t);
+  let receiptsLost = true;
+  globalThis.fetch = async (url, init) => {
+    if (init.method === "POST") {
+      const receipt = await receive(url, init);
+      if (receiptsLost) throw new TypeError("lost receipt");
+      return receipt;
+    }
+    const value = await profile();
+    value.contributions = value.contributions.filter(day => day.date !== "2026-03-08");
+    return Response.json(String(url).endsWith("/api/auth/token") ? { user: { username: "synthetic" } } : value);
+  };
+  await run(config, { scheduled: true, now: new Date("2026-03-08T18:00:00Z") });
+  await run(config, { scheduled: true, now: uploadTime("2026-03-09") });
+  await run(config, { scheduled: true, now: uploadTime("2026-03-10") });
+  receiptsLost = false;
+  await run(config, { scheduled: true, now: uploadTime("2026-03-11") });
+  for (const hour of ["01", "02"]) await run(config, { scheduled: true, now: new Date(`2026-03-11T${hour}:00:00Z`) });
+  assert.equal(await successfulTokens(), 240); // Unmatched day is never falsely acknowledged.
+  await run(config, { yes: true, retry: true, date: "2026-03-08", now: new Date("2026-03-11T03:00:00Z") });
+  assert.equal(await remoteTotal(), 360); // Explicit retry also cannot replay the uncertain day.
+});
+
 test("Deleting the key pauses due submissions; rotation starts a fresh schedule baseline", async t => {
   const { config, receive, remoteTotal, auth } = await setup(t);
   globalThis.fetch = receive;
   await run(config, { scheduled: true, now: new Date("2026-03-09T18:00:00Z") });
   await writeFile(join(config.magpieDir, "plugin-auth.json"), "{}");
-  await run(config, { scheduled: true, now: new Date("2026-03-10T00:00:00Z") });
+  await run(config, { scheduled: true, now: uploadTime("2026-03-10") });
   assert.equal(await remoteTotal(), 0);
   await auth("tt_synthetic_rotated_schedule");
   await run(config, { scheduled: true, now: new Date("2026-03-10T02:00:00Z") });
   assert.equal(await remoteTotal(), 0);
-  await run(config, { scheduled: true, now: new Date("2026-03-11T00:00:00Z") });
+  await run(config, { scheduled: true, now: uploadTime("2026-03-11") });
   assert.equal(await remoteTotal(), 120);
 });

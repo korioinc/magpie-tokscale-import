@@ -26,17 +26,17 @@ Magpie installs the package and its dependencies and manages the Bun plugin runt
 2. In Magpie, open **Plugins → magpie-tokscale-import → Sign in**.
 3. Read the daily public-upload notice, enter your API token, and save it.
 
-**Saving your API key enables automatic daily uploads to your public Tokscale profile at 00:00 UTC.** With the default settings, no additional configuration is needed. Saving the key does not upload usage immediately.
+**Saving your API key enables automatic daily uploads to your public Tokscale profile at 00:10 UTC.** With the default settings, no additional configuration is needed. Saving the key does not upload usage immediately.
 
 ### 3. Check the first upload
 
-The first active check records the current UTC date. Uploads begin at the next **00:00 UTC**, using the previous completed day. All usage dates use UTC midnight boundaries, regardless of the host timezone or timestamp offset. Earlier history is not uploaded automatically when you first enable the plugin or replace the token.
+The first active check records the current UTC date. Uploads begin at **00:10 UTC the following day**, using the previous completed day. The ten-minute delay allows late usage records to arrive before aggregation. All usage dates still use UTC midnight boundaries, regardless of the host timezone or timestamp offset. Records arriving after the upload are not automatically added to that settled day. Earlier history is not uploaded automatically when you first enable the plugin or replace the token.
 
 Look for `tokscale-import` in Magpie host logs. The plugin reports missing credentials, disabled uploads, schedule initialization, successful uploads, unchanged snapshots, empty days, and failures. It does not add a separate log viewer.
 
 A signed-in status confirms that Magpie saved the key, not that Tokscale accepted it. Check the upload result in the logs to confirm successful submission.
 
-**The Magpie plugin host must be running.** Magpie starts the host on demand, so an open app alone does not guarantee a midnight run. After a restart, the plugin processes missed days in order.
+**The Magpie plugin host must be running.** Magpie starts the host on demand, so an open app alone does not guarantee a scheduled run. After a restart, the plugin processes missed days in order. An uncertain upload is parked only for its date; later days continue automatically. The plugin also checks parked dates against your Tokscale profile without resending usage.
 
 ## Provider list and sign-in
 
@@ -84,7 +84,7 @@ If you use `TOKSCALE_API_TOKEN` instead of Magpie sign-in, it overrides saved ke
 
 Except for `autoSubmit`, explicit options take precedence over their environment variables.
 
-**State format upgrades preserve history; package updates do not reset it.** State format version 2 records `timezone: "UTC"`. Version 1 is automatically converted under the shared state lock before a scheduled check, submit, daemon check, or verify operation continues, even when no upload is due. The original JSON is preserved in `state.v1.backup.json`; an existing conflicting backup stops conversion instead of being overwritten.
+**State format upgrades preserve history; package updates do not reset it.** State format version 3 records `timezone: "UTC"` and keeps uncertain scheduled uploads separately by date. Versions 1 and 2 are automatically converted under the shared state lock before a scheduled check, submit, daemon check, or verify operation continues, even when no upload is due. The original JSON is preserved in `state.v1.backup.json` or `state.v2.backup.json`; an existing conflicting backup stops conversion instead of being overwritten.
 
 Daily checkpoints, the schedule, pending uploads, retry safeguards, and other metadata survive conversion. An old non-UTC timezone is preserved as `legacyTimezone`: it records the former file metadata, not proof of each day’s aggregation timezone. All new extraction uses UTC. Previously uploaded days are not automatically corrected or re-uploaded, and decreased-usage protection still applies.
 
@@ -118,13 +118,15 @@ magpie-tokscale-import verify --date 2026-01-01 --timezone UTC
 
 ## Troubleshooting
 
-**No upload yet:** Check that the plugin host is running, a token is saved, and automatic uploads are enabled. The first upload waits until the next UTC midnight. An empty completed day produces no upload.
+**No upload yet:** Check that the plugin host is running, a token is saved, and automatic uploads are enabled. The first upload waits until 00:10 UTC on the day after schedule initialization. An empty completed day produces no upload.
 
 **Uploads remain disabled after an update:** Sign in again and save your key to refresh the saved upload preference. Explicit disable settings still take precedence; update them if you want uploads enabled.
 
 **Authentication rejected:** Replace the token in Magpie. If `TOKSCALE_API_TOKEN` is set, update or remove it too: it overrides saved keys.
 
-**Uncertain scheduled upload:** A timeout or ambiguous response can mean Tokscale received the data. The plugin blocks automatic replay. Use `verify` with the same token, date, and checkpoint state. Verification uses profile reads only and records success only when the snapshot matches; it does not recover the original submission receipt. A mismatch leaves the block in place.
+**Uncertain scheduled upload:** A timeout or ambiguous response can mean Tokscale received the data. The plugin blocks replay of that date, not later scheduled dates. It automatically checks one due parked date per scheduler check, waits an hour between verification attempts for the same date, and continues checking even when no new upload is due. Verification uses profile reads only and records success only when the account and original snapshot match. A failed, unavailable, or mismatched profile check leaves only that date parked; it does not stop later uploads. Recovery results appear in host logs under `verification`.
+
+Manual `verify` remains available for an immediate check with the same token, date, and checkpoint state, but is not required for automatic matching-profile recovery. Verification does not recover the original submission receipt. If the profile never confirms the original snapshot, the date stays unresolved: without server-side idempotency or an authoritative submission lookup, the plugin cannot safely distinguish an unsent upload from an accepted upload with a lost response. Never delete pending state to force a retry.
 
 **Resolved permanent failure:** `submit --yes --retry` can unblock manually resolved failures. It does not bypass Retry-After delays or uncertain scheduled-upload protection. Preview first and include `--date` to limit the upload.
 
